@@ -1,9 +1,12 @@
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 
 // Middleware
 app.use(helmet());
@@ -12,11 +15,41 @@ app.use(express.json());
 
 // In-memory user storage (in a real app, you'd use a database)
 let users = [
-  { id: 1, name: 'John Doe', email: 'john@example.com', age: 30 },
-  { id: 2, name: 'Jane Smith', email: 'jane@example.com', age: 25 },
-  { id: 3, name: 'Bob Johnson', email: 'bob@example.com', age: 35 },
-  { id: 4, name: 'Alice Brown', email: 'alice@example.com', age: 28 },
-  { id: 5, name: 'Charlie Wilson', email: 'charlie@example.com', age: 32 }
+  { 
+    id: 1, 
+    name: 'John Doe', 
+    email: 'john@example.com', 
+    age: 30,
+    password: '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi' // password: password
+  },
+  { 
+    id: 2, 
+    name: 'Jane Smith', 
+    email: 'jane@example.com', 
+    age: 25,
+    password: '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi' // password: password
+  },
+  { 
+    id: 3, 
+    name: 'Bob Johnson', 
+    email: 'bob@example.com', 
+    age: 35,
+    password: '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi' // password: password
+  },
+  { 
+    id: 4, 
+    name: 'Alice Brown', 
+    email: 'alice@example.com', 
+    age: 28,
+    password: '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi' // password: password
+  },
+  { 
+    id: 5, 
+    name: 'Charlie Wilson', 
+    email: 'charlie@example.com', 
+    age: 32,
+    password: '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi' // password: password
+  }
 ];
 
 // Helper function to generate new user ID
@@ -167,6 +200,131 @@ app.post('/api/users', (req, res) => {
   }
 });
 
+// POST /api/login - Login endpoint
+app.post('/api/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    // Basic validation
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email and password are required'
+      });
+    }
+
+    // Find user by email
+    const user = users.find(u => u.email === email);
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid email or password'
+      });
+    }
+
+    // Check password
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid email or password'
+      });
+    }
+
+    // Generate JWT token
+    const token = jwt.sign(
+      { 
+        userId: user.id, 
+        email: user.email,
+        name: user.name 
+      },
+      JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+
+    // Return user info (without password) and token
+    const { password: _, ...userWithoutPassword } = user;
+    
+    res.json({
+      success: true,
+      message: 'Login successful',
+      user: userWithoutPassword,
+      token: token
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error during login',
+      error: error.message
+    });
+  }
+});
+
+// POST /api/register - Register endpoint
+app.post('/api/register', async (req, res) => {
+  try {
+    const { name, email, password, age } = req.body;
+
+    // Basic validation
+    if (!name || !email || !password || !age) {
+      return res.status(400).json({
+        success: false,
+        message: 'Name, email, password, and age are required'
+      });
+    }
+
+    // Check if email already exists
+    const existingUser = users.find(u => u.email === email);
+    if (existingUser) {
+      return res.status(400).json({
+        success: false,
+        message: 'User with this email already exists'
+      });
+    }
+
+    // Hash password
+    const saltRounds = 10;
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
+
+    const newUser = {
+      id: generateId(),
+      name,
+      email,
+      age: parseInt(age),
+      password: hashedPassword
+    };
+
+    users.push(newUser);
+
+    // Generate JWT token
+    const token = jwt.sign(
+      { 
+        userId: newUser.id, 
+        email: newUser.email,
+        name: newUser.name 
+      },
+      JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+
+    // Return user info (without password) and token
+    const { password: _, ...userWithoutPassword } = newUser;
+
+    res.status(201).json({
+      success: true,
+      message: 'User registered successfully',
+      user: userWithoutPassword,
+      token: token
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error registering user',
+      error: error.message
+    });
+  }
+});
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({
@@ -199,6 +357,8 @@ app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
   console.log(`Health check: http://localhost:${PORT}/health`);
   console.log(`List users: http://localhost:${PORT}/api/users`);
+  console.log(`Login: POST http://localhost:${PORT}/api/login`);
+  console.log(`Register: POST http://localhost:${PORT}/api/register`);
   console.log(`Delete user: DELETE http://localhost:${PORT}/api/users/:id`);
 });
 
